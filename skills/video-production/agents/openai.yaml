@@ -1,0 +1,4 @@
+interface:
+  display_name: "Video Production"
+  short_description: "Edit videos, create covers, and draft social copy"
+  default_prompt: "Use $video-production to turn this recording into finished videos, thumbnails, titles, and descriptions. Confirm the output formats if they are not already clear."
