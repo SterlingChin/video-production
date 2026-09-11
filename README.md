@@ -48,7 +48,9 @@ Vertical does not automatically mean shorter. Your requested runtime and story g
 ## What you get
 
 - Speech cleanup that preserves the speaker's meaning, evidence and qualifications.
-- The selected video versions, with captions, inserts and time cards as the brief calls for them.
+- The selected video versions, with inserts and time cards as the brief calls for them.
+- Reviewed timed SRT or WebVTT captions for each layout, matched to the final edit. Identical edits can share a sidecar.
+- Normally an additional social export with readable burned-in captions, alongside the clean master and selectable caption sidecar.
 - A thumbnail or cover for every selected aspect ratio.
 - Titles and independently copyable descriptions or captions for every selected platform.
 - A production manifest and a technical completion check.
@@ -86,7 +88,9 @@ python3 skills/video-production/scripts/package.py init /absolute/output-folder 
 python3 skills/video-production/scripts/package.py check /absolute/output-folder/production.json
 ```
 
-The checker verifies files, metadata, actual aspect ratios and matching runtime for the same edit in both layouts. Editorial, visual and audio review remain part of the agent's job. An explicit request to skip thumbnails can be recorded as a visible exception; unavailable tools are not an exception.
+The checker verifies files, metadata, actual aspect ratios and matching runtime for the same edit in both layouts. Captions are required by default: each layout needs a reviewed SRT or WebVTT with nonempty, ordered cues inside its video duration. It rejects missing captions, invalid timing, empty text and TODO placeholders. Editorial, visual and audio review remain part of the agent's job.
+
+True closed captions are sidecars or selectable embedded tracks. Burned-in text is an additional social export; post descriptions are separate copy. The package keeps an uploadable sidecar even when a selectable track is embedded. Caption revisions preserve the approved audio, and timing changes require another caption review. An explicit request to skip thumbnails or captions can be recorded as a visible exception; unavailable tools are not an exception.
 
 See the [manifest reference](skills/video-production/references/package.md) for the schema.
 

@@ -12,6 +12,16 @@ Word anchors sit inside words. Cut in surrounding quiet intervals, retaining ini
 
 Normalize and inspect the result. Around -16 LUFS with headroom is a useful speech starting point, not a universal platform requirement. Keep transitions from jumping above speech. Preserve source resolution where useful and provide a practical sharing export.
 
+## Captions
+
+Caption the final edit, using either its transcript or source cues accurately retimed through every retained window and speed change. A source transcript with original timestamps does not satisfy this step. Correct names, technical terms, punctuation, and ASR hallucinations. Preserve what was actually said, including qualifications. Include meaningful non-speech sounds when they affect understanding.
+
+Review caption text against the complete edited narrative and check timing at the beginning, around cuts and cards, after speed changes, and through the ending. Check each distinct edit independently. Set the manifest's caption `reviewed` field to true only after this review; reset it when speech or timing changes. State any limits on direct listening honestly.
+
+Export UTF-8 SRT or WebVTT with nonempty cues, ordered start times and end times within the associated video's duration. Same-story layouts can share a sidecar when their audio and timing are identical. Keep this sidecar for uploading even if the video also includes an embedded selectable caption track. Burned-in captions cannot be toggled off and do not replace a closed-caption deliverable.
+
+For social exports, normally render an additional version with captions visible in the picture. Favor short readable phrases, generous margins, and a consistent quiet area. Avoid covering the speaker's face, useful screen details, or platform controls. Review representative captioned frames at phone size and crowded points in the demonstration. Retain the clean master; copy approved audio unchanged where possible and verify preservation when adding caption graphics.
+
 ## Screen Studio
 
 Prefer an original `.screenstudio` project for a sharp independent camera panel. Enlarging a flattened camera bubble is a fallback. Do not overwrite the original project just to obtain another layout.

@@ -2,9 +2,11 @@
 """Initialize or verify a video delivery package. Never render or publish media."""
 
 import argparse
+import html
 import json
 import math
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -48,8 +50,9 @@ def init_package(args):
     manifest = {
         "schema_version": 1, "topic": args.topic, "mode": args.mode, "state": "pending",
         "sources": sources,
-        "required_outputs": {"videos": needed, "thumbnails": needed, "platform_metadata": targets},
+        "required_outputs": {"videos": needed, "captions": needed, "thumbnails": needed, "platform_metadata": targets},
         "videos": {key: {"path": f"videos/{key}.mp4"} for key in needed},
+        "captions": {key: {"path": f"captions/{key}.srt", "reviewed": False} for key in needed},
         "thumbnails": {key: {"path": f"thumbnails/{key}.png"} for key in needed},
         "platforms": {},
     }
@@ -89,6 +92,58 @@ def probe(path, ffprobe):
     return width, height, duration, fps
 
 
+def caption_cues(path):
+    """Read timed SRT/WebVTT cues; editorial accuracy still needs final-edit review."""
+    suffix = path.suffix.lower()
+    if suffix not in (".srt", ".vtt"):
+        raise ValueError("provide an SRT or WebVTT sidecar (.srt or .vtt)")
+    text = path.read_text(encoding="utf-8-sig").replace("\r\n", "\n").replace("\r", "\n").strip()
+    if not text:
+        raise ValueError("caption file is empty")
+    blocks = re.split(r"\n(?:[ \t]*\n)+", text)
+    if suffix == ".vtt":
+        header = blocks.pop(0).splitlines()
+        if not re.fullmatch(r"WEBVTT(?:[ \t].*)?", header[0]) or any("-->" in line for line in header):
+            raise ValueError("WebVTT needs a WEBVTT header and a blank line before cues")
+    timestamp = r"\d{2,}:[0-5]\d:[0-5]\d,\d{3}" if suffix == ".srt" else r"(?:\d{2,}:)?[0-5]\d:[0-5]\d\.\d{3}"
+    timing = re.compile(rf"({timestamp})[ \t]+-->[ \t]+({timestamp})" + (r"(?:[ \t]+[^\n]+)?" if suffix == ".vtt" else ""))
+
+    def seconds(value):
+        parts = value.replace(",", ".").split(":")
+        return sum(float(part) * 60 ** index for index, part in enumerate(reversed(parts)))
+
+    cues = []
+    previous_number = 0
+    for block in blocks:
+        lines = block.splitlines()
+        if suffix == ".vtt" and (re.match(r"^NOTE(?:[ \t]|$)", lines[0]) or lines[0] in ("STYLE", "REGION")):
+            continue
+        cue_number = len(cues) + 1
+        if suffix == ".srt":
+            if not lines[0].isdigit() or int(lines[0]) <= previous_number:
+                raise ValueError(f"cue {cue_number}: SRT sequence numbers must be positive and increasing")
+            previous_number = int(lines.pop(0))
+        elif lines and "-->" not in lines[0]:
+            lines.pop(0)  # Optional WebVTT cue identifier.
+        match = timing.fullmatch(lines.pop(0)) if lines else None
+        if not match:
+            raise ValueError(f"cue {cue_number}: invalid timestamp line")
+        start, end = (seconds(value) for value in match.groups())
+        if end <= start:
+            raise ValueError(f"cue {cue_number}: end must be after start")
+        if cues and start < cues[-1][0]:
+            raise ValueError(f"cue {cue_number}: start times must be ordered")
+        payload = html.unescape(re.sub(r"<[^>]*>", "", "\n".join(lines))).strip()
+        if not payload or "-->" in payload:
+            raise ValueError(f"cue {cue_number}: missing caption text or missing blank line between cues")
+        if not meaningful(payload):
+            raise ValueError(f"cue {cue_number}: caption text contains a TODO or example.invalid placeholder")
+        cues.append((start, end))
+    if not cues:
+        raise ValueError("caption file contains no timed cues")
+    return cues
+
+
 def check_package(args):
     manifest_path = Path(args.manifest).expanduser().resolve()
     data = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -109,16 +164,19 @@ def check_package(args):
     needed = variants(mode) if mode in MODES else []
     waivers = data.get("waivers", {})
     if not isinstance(waivers, dict):
-        errors.append("waivers must be an object containing only an explicit thumbnails exception")
+        errors.append("waivers must be an object containing only explicit thumbnails or captions exceptions")
         waivers = {}
     for key in waivers:
-        if key != "thumbnails":
-            errors.append(f"waivers.{key}: only thumbnails can be waived")
+        if key not in ("thumbnails", "captions"):
+            errors.append(f"waivers.{key}: only thumbnails or captions can be waived")
+        elif not meaningful(waivers[key]):
+            errors.append(f"waivers.{key}: quote the exact explicit user instruction; blank or placeholder waivers are invalid")
     thumbnail_waiver = waivers.get("thumbnails")
-    if "thumbnails" in waivers and not meaningful(thumbnail_waiver):
-        errors.append("waivers.thumbnails: quote the exact explicit user instruction; blank or placeholder waivers are invalid")
     waived_thumbnails = meaningful(thumbnail_waiver)
     needed_thumbnails = [] if waived_thumbnails else needed
+    caption_waiver = waivers.get("captions")
+    waived_captions = meaningful(caption_waiver)
+    needed_captions = [] if waived_captions else needed
 
     def file_reference(value, label, absolute=False):
         if not meaningful(value):
@@ -148,7 +206,7 @@ def check_package(args):
     requirements = data.get("required_outputs", {})
     if not isinstance(requirements, dict):
         requirements = {}
-    for key, expected in (("videos", needed), ("thumbnails", needed_thumbnails), ("platform_metadata", list(platforms))):
+    for key, expected in (("videos", needed), ("captions", needed_captions), ("thumbnails", needed_thumbnails), ("platform_metadata", list(platforms))):
         actual = requirements.get(key)
         if not isinstance(actual, list) or sorted(map(str, actual)) != sorted(expected):
             errors.append(f"required_outputs.{key} must be {expected}")
@@ -182,6 +240,30 @@ def check_package(args):
         if abs(left[0] - right[0]) > tolerance + 0.000001:
             errors.append(f"both-same: durations differ ({left[0]:.3f}s vs {right[0]:.3f}s); maximum is one frame ({tolerance:.4f}s)")
 
+    captions = data.get("captions", {})
+    if not isinstance(captions, dict):
+        captions = {}
+    for variant in needed_captions:
+        label = f"captions.{variant}"
+        entry = captions.get(variant, {})
+        entry = entry if isinstance(entry, dict) else {}
+        path = file_reference(entry.get("path"), label + ".path")
+        if entry.get("reviewed") is not True:
+            errors.append(f"{label}.reviewed: must be true after reviewing text and timing against the final edit")
+        if not path:
+            continue
+        try:
+            cues = caption_cues(path)
+            if variant not in video_info:
+                errors.append(f"{label}: cannot verify cue bounds without a readable associated video duration")
+            else:
+                duration = video_info[variant][0]
+                for index, (_, end) in enumerate(cues, 1):
+                    if end > duration + 0.001:
+                        errors.append(f"{label}: cue {index} ends at {end:.3f}s beyond video duration {duration:.3f}s")
+        except (OSError, ValueError) as exc:
+            errors.append(f"{label}: cannot verify captions: {exc}")
+
     for platform, entry in platforms.items():
         label = f"platforms.{platform}"
         if platform not in PLATFORMS:
@@ -210,9 +292,11 @@ def check_package(args):
         for error in errors:
             print(f"- {error}", file=sys.stderr)
         return 1
-    print(f"Package verified: {len(needed)} video(s), {len(needed_thumbnails)} thumbnail(s), {len(platforms)} platform copy set(s).")
+    print(f"Package verified: {len(needed)} video(s), {len(needed_thumbnails)} thumbnail(s), {len(platforms)} platform copy set(s), {len(needed_captions)} caption mapping(s).")
     if waived_thumbnails:
         print(f"Thumbnails waived by explicit user instruction: {thumbnail_waiver}")
+    if waived_captions:
+        print(f"Captions waived by explicit user instruction: {caption_waiver}")
     print("Technical checks passed; editorial, visual, and audio review still require the agent.")
     return 0
 

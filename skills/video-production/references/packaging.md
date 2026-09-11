@@ -1,5 +1,7 @@
 # Thumbnails and social copy
 
+Timed video captions are a separate required deliverable from the post copy below. Include an SRT or WebVTT for every selected layout and normally a burned-in captioned export for socials. Follow [caption review](editing.md#captions) and record reviewed sidecars in [the manifest](package.md).
+
 ## Covers
 
 By default, every requested aspect gets a usable cover, even if the request only said “edit this video.” Honor an explicit exception recorded in the brief and manifest. Reuse approved artwork for a revision when it still matches.
