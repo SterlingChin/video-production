@@ -100,7 +100,7 @@ Run the integration and format checks with Python and FFmpeg installed:
 python3 -m unittest discover -s tests -v
 ```
 
-The [Agent Skills reference validator](https://github.com/agentskills/agentskills/tree/main/skills-ref) can additionally validate the format:
+The [Agent Skills reference validator](https://github.com/agentskills/agentskills/tree/main/skills-ref) can additionally validate the format. That optional development tool requires Python 3.11 or newer:
 
 ```sh
 skills-ref validate skills/video-production
@@ -109,6 +109,8 @@ skills-ref validate skills/video-production
 To propose a change, describe the recording or request that exposed the problem, preserve the user's format and publication choices, and include a regression check when changing the helper's behavior. Use generated fixtures instead of private footage or transcripts.
 
 ## skills.sh
+
+Find the skill on [skills.sh](https://skills.sh/sterlingchin/video-production/video-production).
 
 This repository follows the public GitHub distribution path documented by [skills.sh](https://skills.sh/docs/faq). The directory discovers skills through installs made with the Skills CLI's telemetry enabled. Indexing is managed by skills.sh; a successful installation does not guarantee immediate directory visibility.
 
